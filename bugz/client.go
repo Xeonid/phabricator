@@ -272,7 +272,6 @@ func CreateAndInitializeDatabase(databasePath string) (*sqlite.Conn, error) {
 	if err != nil {
 		log.Fatalf("Error opening database: %v", err)
 	}
-	//defer db.Close()
 
 	query := `
 	CREATE TABLE IF NOT EXISTS bugs (
