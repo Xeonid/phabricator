@@ -2,7 +2,6 @@ package bugz
 
 import (
 	"embed"
-	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io"
