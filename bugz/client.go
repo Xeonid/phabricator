@@ -67,9 +67,31 @@ func NewBugzClient() *BugzClient {
 	return bc
 }
 
+func InsertBug(db *sqlite.Conn, bug Bug) error {
+
+	bugJSON, err := json.Marshal(bug)
+	if err != nil {
+		return fmt.Errorf("error marshalling bug JSON: %v", err)
+	}
+
+	// Define the execOptions for the insert query
+	execOptions := sqlitex.ExecOptions{
+		Args: []interface{}{bug.ID, bug.CreationTime, bug.Creator, bug.Summary, string(bugJSON)},
+	}
+
+	insertQuery, err := schemaFS.ReadFile("insert.sql")
+	if err != nil {
+		return err
+	}
+
+	if err := sqlitex.ExecuteTransient(db, string(insertQuery), &execOptions); err != nil {
+		fmt.Errorf("error executing insert statement: %v", err)
+	}
+	return nil
+}
+
 // DownloadBugzillaBugs downloads all bugs from the Bugzilla API and saves them to individual JSON files.
-func (bc *BugzClient) DownloadBugzillaBugs() error {
-	// Make URL to bugs
+func (bc *BugzClient) DownloadBugzillaBugs(db *sqlite.Conn) error { // Make URL to bugs
 	apiURL := bc.URL + "/bug"
 
 	// Create a 'bugs' folder if it doesn't exist
@@ -112,12 +134,9 @@ func (bc *BugzClient) DownloadBugzillaBugs() error {
 			return fmt.Errorf("error decoding JSON: %v", err)
 		}
 
-		// Iterate over bugs and write to individual files
 		for _, bug := range bugsResponse["bugs"] {
-			filename := filepath.Join("bugs", fmt.Sprintf("bug_%d.json", bug.ID))
-			err := writeToFile(filename, bug)
-			if err != nil {
-				return fmt.Errorf("error writing to file %s: %v", filename, err)
+			if err := InsertBug(db, bug); err != nil {
+				return fmt.Errorf("error inserting bug %d: %v", bug.ID, err)
 			}
 		}
 
@@ -130,7 +149,6 @@ func (bc *BugzClient) DownloadBugzillaBugs() error {
 		pageNumber++
 	}
 
-	fmt.Println("Bug data written to individual files.")
 	return nil
 }
 

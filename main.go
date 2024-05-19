@@ -18,7 +18,12 @@ func main() {
 
 	switch command {
 	case "bugzilla-download-bugs":
-		err := bc.DownloadBugzillaBugs()
+		db, err := CreateAndInitializeDatabase("sgub.db") // Initialize your SQLite database
+		if err != nil {
+			fmt.Printf("Error initializing database: %v\n", err)
+			return
+		}
+		err = bc.DownloadBugzillaBugs(db) // Pass the SQLite connection to the method
 		if err != nil {
 			fmt.Printf("Error downloading bugs: %v\n", err)
 		}

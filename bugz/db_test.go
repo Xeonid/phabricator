@@ -6,7 +6,7 @@ import (
 )
 
 func TestCreateAndInitializeDatabase(t *testing.T) {
-	db, err := CreateAndInitializeDatabase(":memory:")
+	db, err := CreateAndInitializeDatabase("bugs.db")
 	if err != nil {
 		t.Fatalf("Failed to create and initialize database: %v", err)
 	}
