@@ -268,11 +268,8 @@ func (bc *BugzClient) DownloadBugzillaUsers() error {
 	return nil
 }
 
-//go:embed schema.sql
+//go:embed *.sql
 var schemaFS embed.FS
-
-//go:embed queries.sql
-var queriesFS embed.FS
 
 func CreateAndInitializeDatabase(databasePath string) (*sqlite.Conn, error) {
 	db, err := sqlite.OpenConn(databasePath, 0)
@@ -293,27 +290,21 @@ func CreateAndInitializeDatabase(databasePath string) (*sqlite.Conn, error) {
 }
 
 func GetDistinctCreators(db *sqlite.Conn) ([]string, error) {
-	query, err := queriesFS.ReadFile("queries.sql")
+	query, err := schemaFS.ReadFile("distinct.sql")
 	if err != nil {
 		log.Fatalf("Failed to read query: %v", err)
 	}
 
-	stmt, err := db.Prepare(string(query))
-	if err != nil {
-		log.Fatalf("Failed to prepare statement: %v", err)
-	}
-	defer stmt.Finalize()
-
 	var creators []string
-	for {
-		hasRow, err := stmt.Step()
-		if err != nil {
-			log.Fatalf("Error stepping through rows: %v", err)
-		}
-		if !hasRow {
-			break
-		}
-		creators = append(creators, stmt.ColumnText(0))
+	execOptions := &sqlitex.ExecOptions{
+		ResultFunc: func(stmt *sqlite.Stmt) error {
+			creators = append(creators, stmt.ColumnText(0))
+			return nil
+		},
+	}
+
+	if err := sqlitex.ExecuteTransient(db, string(query), execOptions); err != nil {
+		log.Fatalf("Failed to execute query: %v", err)
 	}
 
 	return creators, nil
