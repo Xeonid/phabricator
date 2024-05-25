@@ -15,11 +15,14 @@ import (
 	"zombiezen.com/go/sqlite/sqlitex"
 )
 
+const BUGDatabasePath = "sgub.db"
+const USRDatabasePath = "user.db"
+
 type BugzClient struct {
 	token string
 	URL   string
-
-	http *http.Client
+	http  *http.Client
+	db    *sqlite.Conn
 }
 
 type BugzLoginResponse struct {
@@ -27,17 +30,23 @@ type BugzLoginResponse struct {
 	Token string `json:"token"`
 }
 
-func NewBugzClient() *BugzClient {
+func NewBugzClient(databasePath string) *BugzClient {
 	login := os.Getenv("BUGZILLA_LOGIN") //Retrieve env var values and check if they are empty
 	password := os.Getenv("BUGZILLA_PASSWORD")
 	if login == "" || password == "" {
 		panic("BUGZILLA_LOGIN or BUGZILLA_PASSWORD is not set")
 	}
 
+	db, err := CreateAndInitializeDatabase(databasePath)
+	if err != nil {
+		log.Fatalf("Error opening database: %v", err)
+	}
+
 	bc := &BugzClient{
 		URL:   "https://bugs.freebsd.org/bugzilla/rest",
 		token: "",
 		http:  &http.Client{},
+		db:    db,
 	}
 
 	formData := url.Values{}
@@ -67,7 +76,7 @@ func NewBugzClient() *BugzClient {
 	return bc
 }
 
-func InsertBug(db *sqlite.Conn, bug Bug) error {
+func (bc *BugzClient) InsertBug(bug Bug) error {
 
 	bugJSON, err := json.Marshal(bug)
 	if err != nil {
@@ -84,14 +93,14 @@ func InsertBug(db *sqlite.Conn, bug Bug) error {
 		return err
 	}
 
-	if err := sqlitex.ExecuteTransient(db, string(insertQuery), &execOptions); err != nil {
+	if err := sqlitex.ExecuteTransient(bc.db, string(insertQuery), &execOptions); err != nil {
 		fmt.Errorf("error executing insert statement: %v", err)
 	}
 	return nil
 }
 
 // DownloadBugzillaBugs downloads all bugs from the Bugzilla API and saves them to individual JSON files.
-func (bc *BugzClient) DownloadBugzillaBugs(db *sqlite.Conn) error { // Make URL to bugs
+func (bc *BugzClient) DownloadBugzillaBugs() error { // Make URL to bugs
 	apiURL := bc.URL + "/bug"
 
 	// Create a 'bugs' folder if it doesn't exist
@@ -135,7 +144,7 @@ func (bc *BugzClient) DownloadBugzillaBugs(db *sqlite.Conn) error { // Make URL 
 		}
 
 		for _, bug := range bugsResponse["bugs"] {
-			if err := InsertBug(db, bug); err != nil {
+			if err := bc.InsertBug(bug); err != nil {
 				return fmt.Errorf("error inserting bug %d: %v", bug.ID, err)
 			}
 		}
@@ -244,7 +253,7 @@ func extractIDs(bug Bug) map[int]User {
 	return idUserMap
 }
 
-func (bc *BugzClient) DownloadBugzillaUsers() error {
+/*func (bc *BugzClient) DownloadBugzillaUsersOLD() error {
 	// Create a 'data/users' folder if it doesn't exist
 	err := os.MkdirAll("data/users", os.ModePerm)
 	if err != nil && !os.IsExist(err) {
@@ -284,7 +293,67 @@ func (bc *BugzClient) DownloadBugzillaUsers() error {
 		fmt.Printf("User %d saved to %s\n", id, filePath)
 	}
 	return nil
+}*/
+
+/*func (bc *BugzClient) DownloadBugzillaUsers(bugsDBPath, usersDBPath string) error {
+	// Connect to the bugs SQLite database
+	bugsDB, err := sqlite.OpenConn(bugsDBPath, sqlite.OpenReadOnly)
+	if err != nil {
+		return fmt.Errorf("error opening bugs database: %v", err)
+	}
+	defer bugsDB.Close()
+
+	// Connect to the users SQLite database or create it if it doesn't exist
+	usersDB, err := sqlite.OpenConn(usersDBPath, sqlite.OpenReadWrite|sqlite.OpenCreate)
+	if err != nil {
+		return fmt.Errorf("error opening users database: %v", err)
+	}
+	defer usersDB.Close()
+
+	// Read the schema from the embedded file
+	schema, err := schemaFS.ReadFile("users_schema.sql")
+	if err != nil {
+		return fmt.Errorf("failed to read schema: %v", err)
+	}
+
+	// Execute the schema to create the "users" table
+	if err := sqlitex.ExecScript(usersDB, string(schema)); err != nil {
+		return fmt.Errorf("failed to execute schema: %v", err)
+	}
+
+	// Execute distinct query on bugs database to retrieve unique user data
+	users, err := GetDistinctCreators(bugsDB)
+	if err != nil {
+		return fmt.Errorf("error getting distinct users: %v", err)
+	}
+
+	// Begin a transaction on users database
+	if err := sqlitex.Execute(usersDB, "BEGIN;", nil); err != nil {
+		return fmt.Errorf("error beginning transaction: %v", err)
+	}
+	defer func() {
+		if rollbackErr := sqlitex.Execute(usersDB, "ROLLBACK;", nil); rollbackErr != nil {
+			log.Printf("Transaction rollback error: %v", rollbackErr)
+		}
+	}()
+
+	// Prepare the SQL statement
+	stmt := usersDB.Prep(`INSERT OR IGNORE INTO users (Creator) VALUES (?)`)
+	defer stmt.Finalize() // Ensure the statement is finalized after execution
+
+	// Insert each user into the users database
+	for range users {
+		// Execute the statement to insert the user into the database
+		if _, err := stmt.Step(); err != nil {
+			return fmt.Errorf("error inserting user: %v", err)
+		}
+
+		// Reset the statement for the next iteration
+		stmt.Reset()
+	}
+	return nil
 }
+*/
 
 //go:embed *.sql
 var schemaFS embed.FS
