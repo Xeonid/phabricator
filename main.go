@@ -31,10 +31,10 @@ func main() {
 			fmt.Printf("Error listing bugs: %v\n", err)
 		}
 	case "bugzilla-download-users":
-		/*err := bc.DownloadBugzillaUsers("sgub.db", "users.db")
+		err := bc.DownloadBugzillaUsers(databasePath)
 		if err != nil {
-			fmt.Printf("Error downloading users: %v\n", err)
-		}*/
+			fmt.Printf("Error downloading bugs: %v\n", err)
+		}
 	case "bugzilla-show-bugs":
 		if err := bc.ShowBugs(); err != nil {
 			fmt.Printf("error showing bugs: %v\n", err)

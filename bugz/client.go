@@ -295,16 +295,16 @@ func extractIDs(bug Bug) map[int]User {
 	return nil
 }*/
 
-/*func (bc *BugzClient) DownloadBugzillaUsers(bugsDBPath, usersDBPath string) error {
+func (bc *BugzClient) DownloadBugzillaUsers(databasePath string) error {
 	// Connect to the bugs SQLite database
-	bugsDB, err := sqlite.OpenConn(bugsDBPath, sqlite.OpenReadOnly)
+	bugsDB, err := sqlite.OpenConn(databasePath, sqlite.OpenReadOnly)
 	if err != nil {
 		return fmt.Errorf("error opening bugs database: %v", err)
 	}
 	defer bugsDB.Close()
 
 	// Connect to the users SQLite database or create it if it doesn't exist
-	usersDB, err := sqlite.OpenConn(usersDBPath, sqlite.OpenReadWrite|sqlite.OpenCreate)
+	usersDB, err := sqlite.OpenConn(databasePath, sqlite.OpenReadWrite|sqlite.OpenCreate)
 	if err != nil {
 		return fmt.Errorf("error opening users database: %v", err)
 	}
@@ -332,28 +332,32 @@ func extractIDs(bug Bug) map[int]User {
 		return fmt.Errorf("error beginning transaction: %v", err)
 	}
 	defer func() {
-		if rollbackErr := sqlitex.Execute(usersDB, "ROLLBACK;", nil); rollbackErr != nil {
-			log.Printf("Transaction rollback error: %v", rollbackErr)
-		}
 	}()
 
-	// Prepare the SQL statement
-	stmt := usersDB.Prep(`INSERT OR IGNORE INTO users (Creator) VALUES (?)`)
-	defer stmt.Finalize() // Ensure the statement is finalized after execution
+	// Read the insert query from the embedded file
+	insertQuery, err := schemaFS.ReadFile("insert_user.sql")
+	if err != nil {
+		return fmt.Errorf("failed to read insert query: %v", err)
+	}
 
 	// Insert each user into the users database
-	for range users {
-		// Execute the statement to insert the user into the database
-		if _, err := stmt.Step(); err != nil {
+	for _, user := range users {
+		execOptions := sqlitex.ExecOptions{
+			Args: []interface{}{user},
+		}
+		if err := sqlitex.Execute(usersDB, string(insertQuery), &execOptions); err != nil {
 			return fmt.Errorf("error inserting user: %v", err)
 		}
-
-		// Reset the statement for the next iteration
-		stmt.Reset()
 	}
+
+	// Commit the transaction
+	if err := sqlitex.Execute(usersDB, "COMMIT;", nil); err != nil {
+		return fmt.Errorf("error committing transaction: %v", err)
+	}
+
+	fmt.Println("Unique user data saved to the users table in the database")
 	return nil
 }
-*/
 
 //go:embed *.sql
 var schemaFS embed.FS
